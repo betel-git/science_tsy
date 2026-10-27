@@ -1,0 +1,424 @@
+\documentclass[a4paper,12pt]{article}
+
+\usepackage{cmap}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english,russian]{babel}
+\usepackage[left=2cm,right=1.5cm,top=2cm,bottom=2cm]{geometry}
+\tolerance=1000
+\setlength{\emergencystretch}{3em}
+
+\usepackage{amsmath,amssymb,amstext,amsfonts,amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs,longtable,array}
+\usepackage{indentfirst}
+\usepackage{stmaryrd}
+
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Q}{\mathbb{Q}}
+\newcommand{\CC}{\mathbb{C}}
+\newcommand{\Bo}{\mathring{B}}
+\renewcommand{\phi}{\varphi}
+\renewcommand{\epsilon}{\varepsilon}
+\renewcommand{\emptyset}{\varnothing}
+\renewcommand{\Gamma}{\varGamma}
+\DeclareMathOperator*{\lowlim}{\underline{lim}}
+\DeclareMathOperator*{\uplim}{\overline{lim}}
+\DeclareMathOperator*{\Img}{Im}
+\DeclareMathOperator*{\esup}{ess\ sup}
+
+\theoremstyle{plain}
+\newtheorem*{theorem}{Теорема}
+\newtheorem*{corollary}{Следствие}
+\newtheorem*{statement}{Утверждение}
+\newtheorem*{lemma}{Лемма}
+\newtheorem*{proposition}{Утверждение}
+\theoremstyle{definition}
+\newtheorem*{definition}{Определение}
+\newtheorem*{example}{Пример}
+\theoremstyle{remark}
+\newtheorem*{remark}{Замечание}
+
+\usepackage{titlesec}
+\titleformat{\section}{\LARGE\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\Large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\large\bfseries}{\thesubsubsection}{1em}{}
+\numberwithin{equation}{section}
+\newcommand{\tab}[1][.5cm]{\hspace*{#1}}
+
+\usepackage{xcolor}
+\definecolor{linkcolor}{HTML}{225ae2}
+\definecolor{urlcolor}{HTML}{225ae2}
+\usepackage[unicode]{hyperref}
+\hypersetup{
+  pdfstartview=FitH,
+  linkcolor=linkcolor,
+  urlcolor=urlcolor,
+  citecolor=linkcolor,
+  colorlinks=true
+}
+
+\newcommand{\Reg}{\operatorname{Reg}}
+\newcommand{\ind}{\mathbf{1}}
+
+% Замените название и впишите имя автора.
+\title{Прогнозирование с советами экспертов}
+\author{Е.А. Цыбулин} % Ваше имя и фамилия.
+\date{\today} % Для документа без даты используйте \date{}.
+
+\begin{document}
+\maketitle
+
+% При необходимости раскомментируйте аннотацию.
+% \begin{abstract}
+% Краткое описание задачи и основных результатов доклада.
+% \end{abstract}
+
+%\tableofcontents
+%\newpage
+
+% Ниже начинается ваш текст. Названия разделов можно свободно менять.
+% \section{Введение}
+% \label{sec:introduction}
+% \begin{enumerate}
+%   \item Prediction with expert advice
+%   \item Кто такие эксперты?
+%   \item Природа временного ряда
+%   \item Прогнозировать можно потребление электроэнегии или спрос на товар, как в данной работе.
+%   \item Оценка прогноза - loss
+%   \item Оценка прогноза - regret
+%   \item Используемые методы прогнозирования значения временного ряда: Ridge regression, Lasso regression, Bayesian Ridge regression, Random Forest regression, Gradient Boosting regression.
+%   \item Специализированные, или спящие, эксперты -> специализированные стратегии
+%   \item Преимущества: можно в рандомный момент времени добавлять новых экспертов, а также допустимы пропуски значений.
+% \end{enumerate} 
+
+\section{Стандартная постановка задачи и основные определения}
+\label{sec:problem}
+Рассматривается задача прогнозирования временного ряда с использованием экспертных стратегий (\textit{prediction with expert advice}). \textit{Временной ряд} $y = (y_1, y_2, \dots)$ представляет собой последовательность элементов некоторого множества $\mathcal{Y}$, называемых исходами. 
+В рамках данной теории строятся алгоритмы, называемые \textit{смешивающими прогнозирующими алгоритмами (ПА)}, объединяющие предсказания следующего исхода различных методов прогнозирования. 
+
+Экспертные стратегии (далее — \textit{эксперты}) могут иметь совершенно разную природу — это могут быть некоторые правила, функции, алгоритмы, оценки специалистов и т.д. Каждый эксперт может быть эффективнее других на определённых участках ряда.
+
+Классическая задача заключается в том, что в режиме онлайн на шагах $t = 1, 2, \dots$ генерируются исходы $y_1, y_2, \dots \in \mathcal{Y}$. 
+В каждый момент времени $t \in \N$ смешивающий ПА, зная предыдущие исходы, а также предсказания $\gamma_t^i$, $i = 1, \dots, N$ из множества допустимых прогнозов $\mathcal{D}$ конечного числа экспертов из множества $I = \{1, \dots, N\}$, делает свой прогноз $\gamma_t \in \mathcal{D}$.
+После того, как становится следующий исход $y_t$, каждый эксперт, а также смешивающий ПА оцениваются величиной потерь.
+
+Потери на шаге $t$ равны значению \textit{функции потерь (лосс)}
+\[\ell: \mathcal{D} \times \mathcal{Y} \to [0, +\infty)\]
+на паре $(\gamma_t, y_t)$ для смешивающего ПА и на паре $(\gamma_t^i, y_t)$ — для эксперта $i$.
+Примеры функций потерь:
+\[\ell(\gamma, y) = \lambda_1 |\gamma - y|_+ + \lambda_2 |y - \gamma|_+,\]
+где $|x|_+ := \max{(x, 0)}$,
+\[\ell(\gamma, y) = (\gamma - y)^2, \quad \ell(\gamma, y) = \llbracket \gamma \neq y \rrbracket.\]
+Также имеют место суммарные (кумулятивные) потери на отрезке $t = 1, \dots, T$:
+\[L_T := \sum\limits_{t=1}^{T} \ell(\gamma_t, y_t), \quad L_T^i := \sum\limits_{t=1}^{T} \ell(\gamma_t^i, y_t).\]
+
+Наша цель — получить смешивающий ПА, который выдаёт ответы, наиболее близкие к ответам наилучшего эксперта.
+Поскольку происхождение исходов нам неизвестно (природа временного ряда необязательно имеет вероятностный характер, поэтому исходы могут иметь как стохастическую природу, так и детерминированную или вообще враждебную по отношению к прогнозирующему алгоритму), то нельзя определить понятие риска.
+Основной гарантией эффективности алгоритма является \textit{регрет относительно лучшего фиксированного эксперта}:
+\[R_T := L_T - \min\limits_{1 \leqslant i \leqslant N} L_T^i.\]
+
+
+\section{Смешивание потерь}
+Определим понятие вероятностного распределения на множестве $I = \{1, \dots, N\}$, которое представляет собой произвольный вектор $\bar{p_t} = (p^1, \dots, p^N)$, где $\sum\limits_{i=1}^{N}p^i = 1$, $p^i \geqslant 0$, $i = 1, \dots, N$. Множество всех вероятностных распределений будем обозначать $I^{\Delta}$.
+
+Рассмотрим задачу смешивания потерь: пусть на каждом шаге известны только потери экспертов (конкретная функция потерь может отсутствовать). 
+На каждом шаге $t = 1, 2, \dots$:
+\begin{enumerate}
+  \item смешивающий ПА находит вектор распределения экспертов $\bar{p_t} = (p^1, \dots, p^N) \in I^\Delta$;
+  \item эксперты объявляют потери $\ell_t^i$, также пусть $\bar{\ell_t} = (\ell_t^1, \dots, \ell_t^N)$;
+  \item смешивающий ПА подсчитывает свои потери $\ell_t = (\bar{p_t} \cdot \bar{\ell_t}) := \sum\limits_{i=1}^{N}p_t^i \cdot \ell_t^i$;
+  \item смешивающий ПА пересчитывает вектор распределения.
+\end{enumerate}
+Предполагаем, что потери экспертов ограничены, например, $\ell_t^i \in [0,1] \ \forall t \in \N, \ \forall i \in \{1, \dots, N\}$.
+Определим кумулятивные потери:
+\[L_T = \sum\limits_{i=1}^{T} (\bar{p_t} \cdot \bar{\ell_t}), \quad L_T^i = \sum\limits_{i=1}^{T} \ell_t^i.\]
+
+Задача смешивающего ПА заключается в подборе вектора распределения таким образом, что
+\[R_T = L_T - \min\limits_{1 \leqslant i \leqslant N} L_T^i \to \min_{I^\Delta}.\]
+
+
+\subsection{Экспоненциальное смешивание потерь}
+Для решения задачи рассмотрим алгоритм $Hedge(\eta)$, который имеет входные параметры $\eta$ — параметр обучения и начальный набор весов экспертов $(w_1^1, \dots, w_1^N)$.
+Пусть веса экспертов в начальный момент времени определены равномерным распределением, то есть $w_1^i = \frac{1}{N}$, $\forall i \in I$.
+Для моментов времени $t = 1, 2, \dots$:
+\begin{itemize}
+  \item алгоритм вычисляет $\bar{p_t} = \frac{\bar{w_t}}{\sum\limits_{i=1}^{N}w_t^i}$ — вектор распределения экспертов;
+  \item эксперты объявляют свои потери $\ell_t^i$, также пусть $\bar{\ell_t} = (\ell_t^1, \dots, \ell_t^N)$;
+  \item алгоритм подсчитывает свои потери $\ell_t = (\bar{p_t} \cdot \bar{\ell_t}) := \sum\limits_{i=1}^{N}p_t^i \cdot \ell_t^i$;
+  \item алгоритм пересчитывает веса экспертов $$w_{t+1}^i = w_t^i \cdot \exp\left(-\eta \ell_t^i\right).$$
+\end{itemize}
+Определим кумулятивные потери:
+\[H_T = \sum\limits_{s=1}^{T} \ell_s, \quad L_T^i = \sum\limits_{s=1}^{T} \ell_s^i.\]
+Легко видеть, что
+\[w_t^i = w_1^i \cdot \exp\left(-\eta L_{t-1}^i\right).\]
+
+Введём следующее понятие смешанной потери алгоритма:
+\[m_t := -\frac{1}{\eta} \ln \left(\sum\limits_{i=1}^{N} p_t^i \cdot \exp \left(-\eta \ell_t^i\right)\right).\]
+Очевидным образом определяются кумулятивные смешанные потери:
+\[M_T := \sum\limits_{t=1}^{T} m_t.\]
+Определим $W_t = \sum\limits_{i=1}^{N}w_t^i$ для всех $t$, тогда из определения следует, что $p_t^i = \frac{w_t^i}{W_t}$.
+
+\begin{lemma}[Представление кумулятивных смешанных потерь]
+Для любого $T \geqslant 1$ выполнено
+\begin{equation}
+\label{eq:mix-loss-potential}
+M_T = -\frac{1}{\eta}\ln W_{T+1}
+    = -\frac{1}{\eta}\ln\left(
+        \sum_{i=1}^{N} w_1^i \exp\left(-\eta L_T^i\right)
+      \right).
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+По правилу обновления весов
+\[
+\sum_{i=1}^{N} p_t^i \exp\left(-\eta\ell_t^i\right)
+= \frac{1}{W_t}\sum_{i=1}^{N} w_t^i \exp\left(-\eta\ell_t^i\right)
+= \frac{W_{t+1}}{W_t}.
+\]
+Следовательно, поскольку $W_1 = \sum_{i=1}^{N} w_1^i = 1$,
+\[
+\begin{aligned}
+M_T
+&= -\frac{1}{\eta}\sum_{t=1}^{T}\ln\frac{W_{t+1}}{W_t}
+ = -\frac{1}{\eta}\ln\prod_{t=1}^{T}\frac{W_{t+1}}{W_t} \\
+&= -\frac{1}{\eta}\ln\frac{W_{T+1}}{W_1}
+ = -\frac{1}{\eta}\ln W_{T+1}.
+\end{aligned}
+\]
+Второе равенство в~\eqref{eq:mix-loss-potential} следует из представления
+$w_{T+1}^i = w_1^i\exp\left(-\eta L_T^i\right)$.
+\end{proof}
+
+\begin{lemma}[Сравнение с потерями эксперта]
+Для любого эксперта $i \in I$ и любого $T \geqslant 1$
+\begin{equation}
+\label{eq:mix-loss-expert}
+M_T \leqslant -\frac{1}{\eta}\ln w_{T+1}^i
+    = L_T^i + \frac{1}{\eta}\ln\frac{1}{w_1^i}
+    = L_T^i + \frac{\ln N}{\eta}.
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+Так как $W_{T+1} = \sum_{j=1}^{N} w_{T+1}^j \geqslant w_{T+1}^i$, из~\eqref{eq:mix-loss-potential} получаем первое неравенство. Остальные равенства следуют из формул $w_{T+1}^i = w_1^i\exp\left(-\eta L_T^i\right)$ и $w_1^i = 1/N$.
+\end{proof}
+
+Следующие вспомогательные свойства используются при переходе к переменному параметру обучения. Обозначим через $m_t^\eta$ и $M_T^\eta$ смешанные и кумулятивные смешанные потери алгоритма с постоянным параметром $\eta$. При сравнении разных значений $\eta$ последовательность потерь экспертов и начальные веса остаются одними и теми же; веса $p_t^i$ вычисляются с соответствующим параметром. Положим также
+\[
+\ell_t^- := \min_{i\in I}\ell_t^i,
+\qquad
+\ell_t^+ := \max_{i\in I}\ell_t^i.
+\]
+
+\begin{lemma}[Границы и монотонность смешанных потерь]
+Для постоянного параметра обучения $\eta \in (0,\infty)$ выполнены следующие свойства:
+\begin{enumerate}
+  \item На каждом шаге $t$
+  \begin{equation}
+  \label{eq:mix-loss-bounds}
+  \ell_t^- \leqslant m_t^\eta
+  \leqslant \sum_{i=1}^{N}p_t^i\ell_t^i
+  = \ell_t \leqslant \ell_t^+.
+  \end{equation}
+  \item Кумулятивные смешанные потери $M_T^\eta$ являются невозрастающей функцией параметра обучения:
+  % В формулировке леммы 3 исходной статьи знак неравенства опечатан;
+  % ниже используется верный знак, согласованный с её доказательством.
+  \begin{equation}
+  \label{eq:mix-loss-monotonicity}
+  M_T^\eta \geqslant M_T^\mu
+  \qquad \text{при } 0 < \eta \leqslant \mu < \infty.
+  \end{equation}
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Так как $\ell_t^i \geqslant \ell_t^-$ для всех $i$, имеем
+\[
+\sum_{i=1}^{N}p_t^i\exp\left(-\eta\ell_t^i\right)
+\leqslant \exp\left(-\eta\ell_t^-\right)
+\sum_{i=1}^{N}p_t^i
+= \exp\left(-\eta\ell_t^-\right).
+\]
+Применяя к обеим частям функцию $x\mapsto -\eta^{-1}\ln x$, получаем $m_t^\eta \geqslant \ell_t^-$. Кроме того, $\ell_t = \sum_{i=1}^{N}p_t^i\ell_t^i \leqslant \ell_t^+$, поскольку $\bar{p_t}$ является вероятностным распределением.
+
+Для доказательства неравенства $m_t^\eta \leqslant \ell_t$ воспользуемся неравенством Йенсена:
+\[
+\varphi(\mathbb{E}X) \leqslant \mathbb{E}\varphi(X),
+\]
+где $\varphi$ --- выпуклая функция, а $X$ --- случайная величина. Пусть $X$ принимает значения $\ell_t^i$ с вероятностями $p_t^i$, $i\in I$. Применяя неравенство Йенсена к выпуклой функции $\varphi(x)=\exp(-\eta x)$, получаем
+\[
+\exp\left(-\eta\sum_{i=1}^{N}p_t^i\ell_t^i\right)
+\leqslant \sum_{i=1}^{N}p_t^i\exp\left(-\eta\ell_t^i\right).
+\]
+После логарифмирования и умножения на $-1/\eta$ это даёт
+\[
+m_t^\eta
+= -\frac{1}{\eta}\ln\left(
+    \sum_{i=1}^{N}p_t^i\exp\left(-\eta\ell_t^i\right)
+  \right)
+\leqslant \sum_{i=1}^{N}p_t^i\ell_t^i = \ell_t.
+\]
+
+Докажем монотонность. Пусть $0<\eta\leqslant\mu<\infty$. Функция $x\mapsto x^{\eta/\mu}$ вогнута на $(0,\infty)$, поэтому по неравенству Йенсена
+\[
+\begin{aligned}
+\sum_{i=1}^{N}w_1^i\exp\left(-\eta L_T^i\right)
+&= \sum_{i=1}^{N}w_1^i
+   \left(\exp\left(-\mu L_T^i\right)\right)^{\eta/\mu} \\
+&\leqslant
+\left(\sum_{i=1}^{N}w_1^i\exp\left(-\mu L_T^i\right)\right)^{\eta/\mu}.
+\end{aligned}
+\]
+Используя~\eqref{eq:mix-loss-potential}, заключаем, что
+\[
+\begin{aligned}
+M_T^\eta
+&= -\frac{1}{\eta}\ln\left(
+    \sum_{i=1}^{N}w_1^i\exp\left(-\eta L_T^i\right)
+  \right) \\
+&\geqslant -\frac{1}{\mu}\ln\left(
+    \sum_{i=1}^{N}w_1^i\exp\left(-\mu L_T^i\right)
+  \right)
+ = M_T^\mu.
+\end{aligned}
+\]
+\end{proof}
+
+\subsection{Смешивание с переменным параметром обучения}
+
+В алгоритме AdaHedge~\cite{AdaHedge} параметр обучения $\eta_t \in (0,\infty)$ может меняться от шага к шагу. При этом веса вычисляются заново по кумулятивным потерям экспертов за предыдущие $t-1$ шагов:
+\[
+w_t^i = w_1^i\exp\left(-\eta_t L_{t-1}^i\right),
+\qquad
+p_t^i = \frac{w_t^i}{W_t}
+      = \frac{\exp\left(-\eta_t L_{t-1}^i\right)}
+             {\sum_{j=1}^{N}\exp\left(-\eta_t L_{t-1}^j\right)}.
+\]
+Здесь $w_1^i = 1/N$ и $L_0^i=0$, поэтому $p_1^i=1/N$.
+
+Смешанные потери на шаге $t$ теперь имеют вид
+\begin{equation}
+\label{eq:variable-mix-loss}
+\begin{aligned}
+m_t
+&= -\frac{1}{\eta_t}\ln\left(
+    \sum_{i=1}^{N}p_t^i\exp\left(-\eta_t\ell_t^i\right)
+  \right) \\
+&= -\frac{1}{\eta_t}\ln\left(
+    \frac{\sum_{i=1}^{N}\exp\left(-\eta_t L_t^i\right)}
+         {\sum_{j=1}^{N}\exp\left(-\eta_t L_{t-1}^j\right)}
+  \right).
+\end{aligned}
+\end{equation}
+Обозначение $M_t^\eta$ сохраняем для кумулятивных смешанных потерь с одним и тем же постоянным параметром $\eta$ на всех шагах. Полагая $M_0^\eta=0$, из~\eqref{eq:mix-loss-potential} и~\eqref{eq:variable-mix-loss} получаем
+\begin{equation}
+\label{eq:variable-mix-increment}
+m_t = M_t^{\eta_t} - M_{t-1}^{\eta_t}.
+\end{equation}
+В то же время $M_T=\sum_{t=1}^{T}m_t$ обозначает кумулятивные смешанные потери алгоритма с последовательностью параметров $\eta_1,\ldots,\eta_T$.
+
+\begin{lemma}[Оценка при невозрастающем параметре обучения]
+Если $\eta_1 \geqslant \eta_2 \geqslant \cdots \geqslant \eta_T > 0$, то
+\begin{equation}
+\label{eq:variable-mix-bound}
+M_T \leqslant M_T^{\eta_T},
+\end{equation}
+где правая часть соответствует постоянному параметру $\eta=\eta_T$ на всех $T$ шагах.
+\end{lemma}
+
+\begin{proof}
+По~\eqref{eq:mix-loss-monotonicity}, из $\eta_t\geqslant\eta_{t+1}$ следует $M_t^{\eta_t}\leqslant M_t^{\eta_{t+1}}$. Поэтому, используя~\eqref{eq:variable-mix-increment} и $M_0^{\eta_1}=0$, имеем
+\[
+\begin{aligned}
+M_T
+&= \sum_{t=1}^{T}\left(M_t^{\eta_t}-M_{t-1}^{\eta_t}\right) \\
+&= M_T^{\eta_T}
+ + \sum_{t=1}^{T-1}\left(M_t^{\eta_t}-M_t^{\eta_{t+1}}\right)
+\leqslant M_T^{\eta_T}.
+\end{aligned}
+\]
+\end{proof}
+
+Наконец, объединяя~\eqref{eq:variable-mix-bound}, \eqref{eq:mix-loss-potential} и~\eqref{eq:mix-loss-expert}, для любого эксперта $i\in I$ получаем
+\begin{equation}
+\label{eq:variable-mix-expert}
+\begin{aligned}
+M_T \leqslant M_T^{\eta_T}
+&= -\frac{1}{\eta_T}\ln\left(
+    \sum_{j=1}^{N}w_1^j\exp\left(-\eta_T L_T^j\right)
+  \right) \\
+&\leqslant L_T^i+\frac{\ln N}{\eta_T}.
+\end{aligned}
+\end{equation}
+
+\section{Основные результаты}
+\label{sec:results}
+Рассмотрим алгоритм sAdaHedge для экспертов-специалистов, впервые представленный в статье \cite{VyuginSham}.
+Постановка задачи такая же, как и прежде, но теперь множество экспертов разделено на два подмножества — активных и «спящих» экспертов — в этом и заключается их специализированность.
+Множество активных экспертов на шаге $t$ обозначим $E_t \subset \{1, \dots, N\}$.
+Потери активных экспертов определены так же, как и ранее: $\ell_t^i$ для эксперта $i$, а для спящих потери не определены.
+Кумулятивные потери определим следующим образом:
+\[\mathcal{L}_T^i := \sum\limits_{t: i \in E_t}^{T} \ell_t^i.\]
+
+
+%\section{Заключение}
+%\label{sec:conclusion}
+% Сформулируйте итоги и вопросы для дальнейшей работы.
+
+\clearpage
+\phantomsection
+\addcontentsline{toc}{section}{\refname}
+% Все записи ниже выводятся в списке литературы, даже если пока не процитированы.
+% Ключи для \cite: CBL, FreundSchapire, VyuginSham, Adaptive, AdaHedge, Devaine, VyuginShamRu.
+% Новый источник добавляйте через \bibitem{УникальныйКлюч} перед
+% \end{thebibliography}; затем ссылайтесь на него с помощью \cite.
+\begin{thebibliography}{9}
+
+\bibitem{CBL}
+Cesa-Bianchi N., Lugosi G.
+\emph{Prediction, Learning, and Games}.
+Cambridge University Press, 2006.
+\href{https://cesa-bianchi.di.unimi.it/predbook/}{Страница книги}.
+
+\bibitem{FreundSchapire}
+Freund Y., Schapire R.~E.
+A decision-theoretic generalization of on-line learning and an application to boosting.
+\emph{Journal of Computer and System Sciences}. 1997. Vol.~55, no.~1. P.~119--139.
+\href{https://www.schapire.net/papers/FreundSc95.pdf}{Авторская версия}.
+
+\bibitem{VyuginSham}
+V'yugin V.~V., Shamsutdinov A.~I.
+Trading-Network Order Formation with the Help of the Aggregation of Specialized Forecast Algorithms.
+\emph{Journal of Communications Technology and Electronics}. 2016. Vol.~61. P.~1400--1410.
+\url{https://doi.org/10.1134/S1064226916120251}.
+
+\bibitem{Adaptive}
+Adamskiy D., Koolen W.~M., Chernov A., Vovk V.
+A Closer Look at Adaptive Regret.
+\emph{Journal of Machine Learning Research}. 2016. Vol.~17, no.~23. P.~1--21.
+\url{https://www.jmlr.org/papers/v17/13-533.html}.
+
+\bibitem{AdaHedge}
+De Rooij S., Van Erven T., Gr\"unwald P.~D., Koolen W.~M.
+Follow the Leader If You Can, Hedge If You Must.
+\emph{Journal of Machine Learning Research}. 2014. Vol.~15, no.~37. P.~1281--1316.
+\url{https://www.jmlr.org/papers/v15/rooij14a.html}.
+
+\bibitem{Devaine}
+Devaine M., Gaillard P., Goude Y., Stoltz G.
+Forecasting electricity consumption by aggregating specialized experts.
+\emph{Machine Learning}. 2013. Vol.~90, no.~2. P.~231--260.
+\url{https://doi.org/10.1007/s10994-012-5314-7}.
+
+\bibitem{VyuginShamRu}
+Вьюгин В.~В., Шамсутдинов А.~И.
+Формирование заказов торговой сети с помощью агрегирования специализированных алгоритмов прогнозирования.
+\emph{Информационные процессы}. 2016. Т.~16, №~1. С.~72--89.
+
+\end{thebibliography}
+
+\end{document}

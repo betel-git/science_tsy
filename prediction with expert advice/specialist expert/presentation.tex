@@ -1,0 +1,208 @@
+\documentclass[11pt,aspectratio=169]{beamer}
+
+% Русский язык. Этот вариант преамбулы рассчитан на pdfLaTeX.
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english,russian]{babel}
+
+% Математика, рисунки и таблицы.
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{stmaryrd}
+
+% Стандартное оформление Beamer.
+% Для другой встроенной темы замените default, например, на Madrid.
+% Для формата 4:3 замените aspectratio=169 на aspectratio=43 выше.
+\usetheme{Madrid}
+\usecolortheme{default}
+\usefonttheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+% Данные титульного слайда: замените на свои.
+\title[Краткое название]{Формирование заказов торговой сети с использованием специализированных алгоритмов прогнозирования с экспертами}
+\subtitle{}
+\author[И.~О.~Фамилия]{Е.~А.~Цыбулин}
+\institute{МГУ имени М.~В.~Ломоносова}
+\date{\today} % Можно указать дату явно или оставить \date{}.
+
+% При необходимости раскомментируйте оглавление перед каждым разделом.
+% \AtBeginSection[]{
+%   \begin{frame}{План раздела}
+%     \tableofcontents[currentsection]
+%   \end{frame}
+% }
+
+\begin{document}
+
+% Титульный слайд не входит в нумерацию.
+\begin{frame}[plain,noframenumbering]
+  \titlepage
+\end{frame}
+
+\begin{frame}{План презентации}
+  \tableofcontents
+\end{frame}
+
+\section{Введение}
+
+\begin{frame}{Базовые определения}
+  \medskip
+  \begin{block}{Определение}
+    \begin{itemize}
+      \item \textit{Временной ряд} — последовательность некоторых событий во времени. Множество исходов — $\mathcal{Y}$.
+      \item \textit{Эксперты} в данной работе — чёрный ящик, который выдаёт предсказания следующего события из множества допустимых прогнозов $\mathcal{D}$.
+    \end{itemize}
+  \end{block}
+
+  \begin{itemize}
+    \item Природа значений временного ряда необязательно имеет вероятностный характер. Последовательность может быть случайной, детерминированной или враждебной по отношению к прогнозирующему алгоритму.
+  \end{itemize}
+  
+  \begin{exampleblock}{Пример}
+    Прогноз потребления электроэнергии или формирование заказов для поставщика товаров.
+  \end{exampleblock}
+  \medskip
+\end{frame}
+
+\section{Основная часть}
+
+%\begin{frame}{Постановка задачи}
+%  Имеется множество исходов $\mathcal{Y}$ и множество допустимых прогнозов $\mathcal{D}$.
+%  \begin{block}{Протокол прогнозирования}
+%    \begin{enumerate}
+%      \item Среда имеет историю значений $y_1, \dots, y_{t-1}$ из $\mathcal{Y}$;
+%      \item Эксперты $\{1, \dots, N\}$ делают прогнозы $\gamma_t^{(1)}, \dots, \gamma_t^{(N)}$ из $\mathcal{D}$;
+%      \item Смешивающий алгоритм (далее распределитель) изучает решения экспертов и предлагает свой прогноз $\gamma_t \in \mathcal{D}$;
+%      \item Среда раскрывает следующее значение $y_t \in \mathcal{Y}$;
+%      \item Эксперты и распределитель получают свои потери $l_t^{(1)}, \dots, l_t^{(N)}$.
+%    \end{enumerate}
+%  \end{block}
+%\end{frame}
+
+\begin{frame}{Постановка задачи}
+  На каждом шаге нам известны только потери экспертов (знать функцию потерь необязательно).
+
+  В моменты времени $t = 1, 2, \dots$:
+  \begin{itemize}
+    \item Распределитель находит вектор распределения экспертов $\bar{p_t} = (p_t^1, \dots, p_t^N)$, где $\sum\limits_{i=1}^{N}p_t^i = 1$, $p_t^i \geqslant 0$.
+    \item Эксперты объявляют потери $\ell_t^i$;
+    \item Распределитель подсчитывает свои потери $\ell_t = (\bar{p_t} \cdot \bar{\ell_t}) := \sum\limits_{i=1}^{N}p_t^i \cdot \ell_t^i$;
+    \item Распределитель пересчитывает веса экспертов.
+  \end{itemize}
+  
+\end{frame}
+
+\begin{frame}{Функции потерь}
+  \begin{block}{Определение: функция потерь}
+    Функция потерь — некоторая функция
+    \[\ell: \mathcal{D} \times \mathcal{Y} \to [0, +\infty),\]
+    выпуклая по множеству $\mathcal{Y}$.
+  \end{block}
+
+  \begin{exampleblock}{Примеры}
+    \[\ell(\gamma, y) = \lambda_1 |\gamma - y|_+ + \lambda_2 |y - \gamma|_+,\]
+    где $|x|_+ := \max{(x, 0)}$;
+    \[\ell(\gamma, y) = (\gamma - y)^2, \quad \ell(\gamma, y) = \llbracket \gamma \neq y \rrbracket.\]
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}{Оценка алгоритма}
+  \begin{block}{Определение: кумулятивная потеря}
+    \[L_T = \sum\limits_{t=1}^{T} \ell(\gamma_t, y_t), \quad L_T^i = \sum\limits_{t=1}^{T} \ell(\gamma_t^i, y_t)\]
+  \end{block}
+
+  \begin{block}{Определение: регрет относительно лучшего фиксированного эксперта}
+    \[R_T = L_T - \min\limits_{1 \leqslant i \leqslant N} L_T^i\]
+  \end{block}
+
+  \begin{alertblock}{Замечание}
+    Лучший фиксированный эксперт выбирается по суммарной потере за все $T$ шагов;
+    его индекс не меняется во времени.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Hedge}
+  Начальное распределение весов: $w_1^i = \frac{1}{N}$. Для моментов времени $t = 1, 2, \dots$:
+  \begin{itemize}
+    \item Распределитель вычисляет $\bar{p_t} = \frac{\bar{w_t}}{\sum\limits_{i=1}^{N}w_t^i}$;
+    \item Эксперты объявляют свои потери $\ell_t^i$. Пусть $\bar{\ell_t} = (\ell_t^1, \dots, \ell_t^N)$;
+    \item Распределитель подсчитывает свои потери $\ell_t = (\bar{p_t} \cdot \bar{\ell_t}) := \sum\limits_{i=1}^{N}p_t^i \cdot \ell_t^i$;
+    \item Распределитель пересчитывает веса экспертов $$w_{t+1}^i = w_t^i e^{-\eta \ell_t^i},$$ где $\eta > 0$ — параметр обучения.
+  \end{itemize}
+  Кумулятивные потери:
+  \[H_t = \sum\limits_{s=1}^{t} \ell_s, \quad L_t^i = \sum\limits_{s=1}^{t} \ell_t^i.\]
+\end{frame}
+
+
+\begin{frame}{Две колонки и таблица}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.47\textwidth}
+      \textbf{Порядок работы}
+      \medskip
+      \begin{enumerate}
+        \item Задать исходные данные.
+        \item Применить метод.
+        \item Оценить результат.
+      \end{enumerate}
+      % Для появления пунктов по очереди используйте
+      % \begin{enumerate}[<+->] вместо \begin{enumerate}.
+    \end{column}
+
+    \begin{column}{0.47\textwidth}
+      \textbf{Обозначения}
+      \medskip
+
+      \begin{tabular}{@{}ll@{}}
+        \toprule
+        Символ & Значение \\
+        \midrule
+        $n$       & Число наблюдений \\
+        $x_i$     & Наблюдение $i$ \\
+        $\bar{x}$ & Среднее значение \\
+        \bottomrule
+      \end{tabular}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Иллюстрация}
+  \begin{figure}
+    \centering
+    % Положите рисунок my-figure.pdf рядом с main.tex.
+    % Можно заменить имя файла на своё (PDF, PNG или JPG).
+    \IfFileExists{my-figure.pdf}{%
+      \includegraphics[width=0.75\textwidth,height=0.52\textheight,
+                       keepaspectratio]{my-figure.pdf}%
+    }{%
+      \fbox{%
+        \parbox[c][0.44\textheight][c]{0.72\textwidth}{%
+          \centering Место для рисунка%
+        }%
+      }%
+    }
+    \caption{Краткая подпись к иллюстрации}
+  \end{figure}
+\end{frame}
+
+\section{Заключение}
+
+\begin{frame}{Заключение}
+  \begin{itemize}
+    \item Основной результат работы.
+    \item Область применения и ограничения.
+    \item Направление дальнейшего исследования.
+  \end{itemize}
+
+  \bigskip
+  \centering
+  Спасибо за внимание!
+\end{frame}
+
+% Заготовка нового слайда: скопируйте и раскомментируйте.
+% \begin{frame}{Заголовок слайда}
+%   Содержимое слайда.
+% \end{frame}
+
+\end{document}
