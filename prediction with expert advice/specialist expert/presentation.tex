@@ -1,208 +1,838 @@
 \documentclass[11pt,aspectratio=169]{beamer}
+\usetheme{Boadilla}
 
-% Русский язык. Этот вариант преамбулы рассчитан на pdfLaTeX.
+\usepackage{cmap}
 \usepackage[T2A]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage[english,russian]{babel}
+\usepackage{amsmath,amssymb,graphicx,booktabs}
 
-% Математика, рисунки и таблицы.
-\usepackage{amsmath,amssymb}
-\usepackage{graphicx}
-\usepackage{booktabs}
-\usepackage{stmaryrd}
-
-% Стандартное оформление Beamer.
-% Для другой встроенной темы замените default, например, на Madrid.
-% Для формата 4:3 замените aspectratio=169 на aspectratio=43 выше.
-\usetheme{Madrid}
-\usecolortheme{default}
-\usefonttheme{default}
-\setbeamertemplate{navigation symbols}{}
-\setbeamertemplate{footline}[frame number]
-
-% Данные титульного слайда: замените на свои.
-\title[Краткое название]{Формирование заказов торговой сети с использованием специализированных алгоритмов прогнозирования с экспертами}
-\subtitle{}
-\author[И.~О.~Фамилия]{Е.~А.~Цыбулин}
-\institute{МГУ имени М.~В.~Ломоносова}
-\date{\today} % Можно указать дату явно или оставить \date{}.
-
-% При необходимости раскомментируйте оглавление перед каждым разделом.
-% \AtBeginSection[]{
-%   \begin{frame}{План раздела}
-%     \tableofcontents[currentsection]
-%   \end{frame}
-% }
+\title[Агрегирование прогнозов]{Адаптивное агрегирование прогнозов специализированных экспертов}
+\author{Е.~А.~Цыбулин}
+\institute[МГУ]{МГУ имени М.~В.~Ломоносова}
+\date{\today}
 
 \begin{document}
-
-% Титульный слайд не входит в нумерацию.
+% Основные страницы 1--6. Время блока: 10 минут, отметка 10:00.
 \begin{frame}[plain,noframenumbering]
   \titlepage
 \end{frame}
-
-\begin{frame}{План презентации}
-  \tableofcontents
+\section{Постановка задачи}
+\begin{frame}{План доклада}
+  \begin{enumerate}
+    \item Онлайн-прогнозирование и сравнение с экспертами.
+    \item Экспоненциальные веса и адаптивный параметр обучения.
+    \item Спящие эксперты и алгоритм sAdaHedge.
+    \item Оценка регрета через дисперсию потерь.
+    \item Эксперимент с суточным электропотреблением.
+  \end{enumerate}
 \end{frame}
-
-\section{Введение}
-
-\begin{frame}{Базовые определения}
-  \medskip
-  \begin{block}{Определение}
-    \begin{itemize}
-      \item \textit{Временной ряд} — последовательность некоторых событий во времени. Множество исходов — $\mathcal{Y}$.
-      \item \textit{Эксперты} в данной работе — чёрный ящик, который выдаёт предсказания следующего события из множества допустимых прогнозов $\mathcal{D}$.
-    \end{itemize}
+\begin{frame}{Временной ряд, эксперты и агрегатор}
+  \begin{block}{Определение 1. Временной ряд}
+    Временной ряд --- последовательность исходов
+    $y=(y_1,y_2,\ldots)$, где $y_t\in\mathcal Y$ и $t$ обозначает время.
   \end{block}
-
-  \begin{itemize}
-    \item Природа значений временного ряда необязательно имеет вероятностный характер. Последовательность может быть случайной, детерминированной или враждебной по отношению к прогнозирующему алгоритму.
-  \end{itemize}
-  
-  \begin{exampleblock}{Пример}
-    Прогноз потребления электроэнергии или формирование заказов для поставщика товаров.
-  \end{exampleblock}
+  \begin{block}{Определение 2. Экспертная стратегия}
+    Эксперт $i$ --- правило, выдающее по доступной истории прогноз
+    $\gamma_t^i\in\mathcal D$ до наблюдения $y_t$.
+    Здесь $\mathcal D$ --- множество допустимых прогнозов.
+  \end{block}
+  \begin{block}{Определение 3. Агрегатор}
+    Агрегатор --- алгоритм, который по прогнозам экспертов и прошлым
+    наблюдениям строит собственный прогноз $\gamma_t\in\mathcal D$.
+  \end{block}
+  \par\vfill{\scriptsize Экспертами могут быть регрессионные модели, сезонные правила и оценки специалистов.\par}
+\end{frame}
+\begin{frame}{Протокол онлайн-прогнозирования}
+  Эксперты: $I=\{1,\ldots,N\}$. Исходы: $y_t\in\mathcal Y$.
+  Прогнозы: $\gamma_t^i,\gamma_t\in\mathcal D$.
   \medskip
+  \begin{enumerate}
+    \item По истории до шага $t$ эксперты выдают $\gamma_t^1,\ldots,\gamma_t^N$.
+    \item Агрегатор выбирает собственный прогноз $\gamma_t$.
+    \item Среда раскрывает исход $y_t$.
+    \item Вычисляются потери. Агрегатор обновляет своё состояние.
+  \end{enumerate}
+  \par\medskip\textbf{Прогноз и веса выбираются до раскрытия текущего исхода.}
+  \par\vfill{\scriptsize Вероятностную модель ряда не предполагаем. Гарантия должна работать для любой последовательности исходов.\par}
+\end{frame}
+\begin{frame}{Функции потерь}
+  \begin{block}{Определение 4. Функция потерь}
+    Функция $\ell:\mathcal D\times\mathcal Y\to[0,+\infty)$
+    сопоставляет прогнозу $\gamma$ и исходу $y$ величину ошибки $\ell(\gamma,y)$.
+  \end{block}
+  \begin{align*}
+    \text{Квадратичная:}\qquad &\ell(\gamma,y)=(\gamma-y)^2,\\[2mm]
+    \text{Абсолютная:}\qquad &\ell(\gamma,y)=|\gamma-y|,\\[2mm]
+    \text{Несимметричная:}\qquad
+      &\ell(\gamma,y)=\lambda_1(\gamma-y)_++\lambda_2(y-\gamma)_+.
+  \end{align*}
+  Здесь $(x)_+=\max\{x,0\}$, $\lambda_1,\lambda_2>0$.
+  При $\lambda_2>\lambda_1$ недооценка штрафуется сильнее переоценки.
+  \par\vfill{\scriptsize Все три примера выпуклы по прогнозу $\gamma$. Это свойство понадобится при усреднении прогнозов.\par}
+\end{frame}
+\begin{frame}{Кумулятивные потери и регрет}
+  \begin{block}{Определение 5. Кумулятивные потери}
+    Суммарные потери на первых $T$ шагах:
+    \[
+      L_T:=\sum_{t=1}^T\ell(\gamma_t,y_t),\qquad
+      L_T^i:=\sum_{t=1}^T\ell(\gamma_t^i,y_t).
+    \]
+  \end{block}
+  \begin{block}{Определение 6. Регрет}
+    Регрет относительно лучшего фиксированного эксперта:
+    \[R_T:=L_T-\min_{i\in I}L_T^i.\]
+  \end{block}
+  \begin{itemize}
+    \item Лучший эксперт выбирается после всех $T$ шагов; его индекс фиксирован.
+    \item Цель: малый добавочный проигрыш, в частности $R_T/T\to0$.
+  \end{itemize}
+  \par\vfill{\scriptsize Малый регрет сам по себе не означает малой абсолютной ошибки: важен уровень качества экспертов.\par}
 \end{frame}
 
-\section{Основная часть}
+% Основные страницы 7--12. Время блока: 12 минут, отметка 22:00.
+\section{Экспоненциальное смешивание}
+\begin{frame}{Задача смешивания потерь}
+  \begin{block}{Определение 7. Распределение на множестве экспертов}
+    Вектор весов $p_t=(p_t^1,\ldots,p_t^N)$, для которого
+    $p_t^i\ge0$ и $\sum_{i=1}^N p_t^i=1$.
+  \end{block}
+  \begin{block}{Определение 8. Смесь потерь}
+    Средняя потеря экспертов с весами $p_t$ и её накопленное значение:
+    \[
+      \ell_t:=\sum_{i=1}^N p_t^i\ell_t^i,\qquad
+      L_T:=\sum_{t=1}^T\ell_t.
+    \]
+  \end{block}
+  Веса выбираются до раскрытия текущих потерь $\ell_t^i$.
+  \par\smallskip
+  Здесь достаточно последовательности чисел $\ell_t^i$:
+  конкретная функция потерь может не задаваться.
+  \par\vfill{\scriptsize В классической постановке можно считать $\ell_t^i\in[0,1]$. Позже оценка будет зависеть от фактического размаха потерь.\par}
+\end{frame}
 
-%\begin{frame}{Постановка задачи}
-%  Имеется множество исходов $\mathcal{Y}$ и множество допустимых прогнозов $\mathcal{D}$.
-%  \begin{block}{Протокол прогнозирования}
-%    \begin{enumerate}
-%      \item Среда имеет историю значений $y_1, \dots, y_{t-1}$ из $\mathcal{Y}$;
-%      \item Эксперты $\{1, \dots, N\}$ делают прогнозы $\gamma_t^{(1)}, \dots, \gamma_t^{(N)}$ из $\mathcal{D}$;
-%      \item Смешивающий алгоритм (далее распределитель) изучает решения экспертов и предлагает свой прогноз $\gamma_t \in \mathcal{D}$;
-%      \item Среда раскрывает следующее значение $y_t \in \mathcal{Y}$;
-%      \item Эксперты и распределитель получают свои потери $l_t^{(1)}, \dots, l_t^{(N)}$.
-%    \end{enumerate}
-%  \end{block}
+\begin{frame}{Hedge: экспоненциальные веса}
+  Фиксируем $\eta>0$ и начальные веса $w_1^i=1/N$.
+  \begin{enumerate}
+    \item Нормируем веса: $\displaystyle p_t^i=\frac{w_t^i}{\sum_j w_t^j}$.
+    \item Получаем потери и считаем $\displaystyle\ell_t=\sum_i p_t^i\ell_t^i$.
+    \item Обновляем веса: $\displaystyle w_{t+1}^i=w_t^i e^{-\eta\ell_t^i}$.
+  \end{enumerate}
+  \medskip
+  После раскрытия формулы обновления:
+  \[
+    w_t^i=\frac1N e^{-\eta L_{t-1}^i},\qquad
+    p_t^i=\frac{e^{-\eta L_{t-1}^i}}{\sum_j e^{-\eta L_{t-1}^j}}.
+  \]
+  \par\medskip\textbf{Меньшие накопленные потери дают больший вес.}
+  %\par\vfill{\scriptsize Экспоненциальное взвешивание: Freund--Schapire~\cite{FreundSchapire}.\par}
+\end{frame}
+
+%\begin{frame}{Роль параметра обучения}
+  %Отношение двух весов определяется разностью накопленных потерь:
+  %\[\frac{p_t^i}{p_t^j}=\exp\!\left(-\eta\bigl(L_{t-1}^i-L_{t-1}^j\bigr)\right).\]
+  %\medskip
+  %\begin{tabular}{@{}p{0.26\textwidth}p{0.66\textwidth}@{}}
+  %  \toprule
+  %  Малое $\eta$ & Веса близки друг к другу; слабая реакция на различия потерь.\\[3mm]
+  %  Большое $\eta$ & Вес сосредоточен на лидерах по накопленной потере.\\
+  %  \bottomrule
+  %\end{tabular}
+  %\medskip
+  %\textbf{Пример.} Два эксперта с потерями $0$ и $1$ получают
+  %вес первого $1/(1+e^{-\eta})$: около $0{,}525$ при $\eta=0{,}1$
+  %и $0{,}881$ при $\eta=2$.
+  %\par\medskip\textbf{Адаптивный выбор $\eta_t$ должен учитывать наблюдаемую сложность задачи.}
 %\end{frame}
 
-\begin{frame}{Постановка задачи}
-  На каждом шаге нам известны только потери экспертов (знать функцию потерь необязательно).
+\begin{frame}{Смешанная потеря и смешанная разность}
+  \begin{block}{Определение 9. Смешанная потеря}
+    При параметре $\eta>0$ смешанная потеря и её сумма равны
+    \[
+      m_t:=-\frac1\eta\ln\!\left(\sum_i p_t^i e^{-\eta\ell_t^i}\right),
+      \qquad M_T:=\sum_{t=1}^T m_t.
+    \]
+  \end{block}
+  \begin{block}{Определение 10. Смешанная разность}
+    \[\delta_t:=\ell_t-m_t,\qquad \Delta_T:=\sum_{t=1}^T\delta_t.\]
+  \end{block}
+  \textbf{Свойства:}
+  \[\min_i\ell_t^i\le m_t\le\ell_t\le\max_i\ell_t^i,\qquad L_T=M_T+\Delta_T.\]
+  \par\vfill{\scriptsize Неравенство Йенсена даёт $m_t\le\ell_t$, поэтому $\delta_t\ge0$.\par}
+\end{frame}
+\begin{frame}{Потенциал и сравнение с экспертом}
+  Положим $W_t=\sum_i w_t^i$. При постоянном $\eta$:
+  \[
+    \sum_i p_t^i e^{-\eta\ell_t^i}=\frac{W_{t+1}}{W_t},\qquad
+    M_T=-\frac1\eta\sum_{t=1}^T\ln\frac{W_{t+1}}{W_t}=-\frac1\eta\ln W_{T+1}.
+  \]
+  Так как $W_1=1$ и $W_{T+1}\ge\frac1N e^{-\eta L_T^i}$,
+  \[M_T\le L_T^i+\frac{\ln N}{\eta}\qquad\text{для любого }i.\]
+  \begin{block}{Разложение регрета}
+    \[L_T-L_T^i=(M_T-L_T^i)+\Delta_T\le\frac{\ln N}{\eta}+\Delta_T.\]
+  \end{block}
+\end{frame}
+\begin{frame}{Переменный параметр обучения}
+  При каждом новом $\eta_t$ пересчитываем веса по всей истории:
+  \[w_t^i=\frac1N e^{-\eta_t L_{t-1}^i},\qquad p_t^i=\frac{w_t^i}{\sum_j w_t^j}.\]
+  Обозначим через $M_t^\eta$ потенциал с постоянным параметром $\eta$.
+  Тогда
+  \[m_t=M_t^{\eta_t}-M_{t-1}^{\eta_t}.\]
+  \begin{block}{Если $\eta_1\ge\eta_2\ge\cdots\ge\eta_T>0$}
+    \[M_T=\sum_{t=1}^T m_t\le M_T^{\eta_T}\le L_T^i+\frac{\ln N}{\eta_T}.\]
+  \end{block}
+  %\par\vfill{\scriptsize Используется невозрастание $M_t^\eta$ по $\eta$. Доказательства: резерв A1--A2. Адаптивные веса: \cite{AdaHedge}.\par}
+\end{frame}
 
-  В моменты времени $t = 1, 2, \dots$:
+% Основные страницы 13--19. Время блока: 15 минут, отметка 37:00.
+\section{Специалисты и sAdaHedge}
+\begin{frame}{Эксперты-специалисты}
+  \begin{block}{Определение 11. Эксперт-специалист}
+    Специалист --- эксперт, участвующий в прогнозировании лишь на части шагов.
+    На шаге $t$ множество $E_t\subseteq I$ содержит активных экспертов;
+    эксперты из $I\setminus E_t$ называются спящими.
+  \end{block}
   \begin{itemize}
-    \item Распределитель находит вектор распределения экспертов $\bar{p_t} = (p_t^1, \dots, p_t^N)$, где $\sum\limits_{i=1}^{N}p_t^i = 1$, $p_t^i \geqslant 0$.
-    \item Эксперты объявляют потери $\ell_t^i$;
-    \item Распределитель подсчитывает свои потери $\ell_t = (\bar{p_t} \cdot \bar{\ell_t}) := \sum\limits_{i=1}^{N}p_t^i \cdot \ell_t^i$;
-    \item Распределитель пересчитывает веса экспертов.
+    \item Специализация может зависеть от дня недели, сезона или режима ряда.
+    \item Эксперт может отсутствовать из-за недоступных признаков.
+    \item Его качество следует оценивать на шагах, когда он участвовал.
   \end{itemize}
-  
+  \par\medskip\textbf{Условия протокола.}
+    $N\ge2$, $E_t\ne\varnothing$. Множество $E_t$ определяется
+    до раскрытия текущего исхода или текущих потерь.
+  %\par\vfill{\scriptsize Специализированное агрегирование: \cite{VyuginSham,Devaine}. В рассматриваемой теореме множество $I$ фиксировано.\par}
 \end{frame}
 
-\begin{frame}{Функции потерь}
-  \begin{block}{Определение: функция потерь}
-    Функция потерь — некоторая функция
-    \[\ell: \mathcal{D} \times \mathcal{Y} \to [0, +\infty),\]
-    выпуклая по множеству $\mathcal{Y}$.
+\begin{frame}{Нормировка на активных экспертах}
+  Глобальные веса хранят информацию обо всех экспертах:
+  \[
+    w_t^i=\frac1N e^{-\eta_t L_{t-1}^i},\qquad
+    p_t^i=\frac{w_t^i}{\sum_j w_t^j}.
+  \]
+  \begin{block}{Определение 12. Нормированные веса активных экспертов}
+    Распределение весов на непустом множестве $E_t$:
+    \[
+       p_t^{i,E_t}:=\frac{p_t^i}{\sum_{j\in E_t}p_t^j},\qquad i\in E_t.
+    \]
   \end{block}
-
-  \begin{exampleblock}{Примеры}
-    \[\ell(\gamma, y) = \lambda_1 |\gamma - y|_+ + \lambda_2 |y - \gamma|_+,\]
-    где $|x|_+ := \max{(x, 0)}$;
-    \[\ell(\gamma, y) = (\gamma - y)^2, \quad \ell(\gamma, y) = \llbracket \gamma \neq y \rrbracket.\]
-  \end{exampleblock}
+  Потеря смеси теперь учитывает только активных экспертов:
+  \[\ell_t=\sum_{i\in E_t} p_t^{i,E_t}\ell_t^i.\]
+  \par\vfill{\scriptsize При конечном $\eta_t$ веса положительны. Случай $\eta_t=\infty$ рассмотрим отдельно.\par}
 \end{frame}
 
-\begin{frame}{Оценка алгоритма}
-  \begin{block}{Определение: кумулятивная потеря}
-    \[L_T = \sum\limits_{t=1}^{T} \ell(\gamma_t, y_t), \quad L_T^i = \sum\limits_{t=1}^{T} \ell(\gamma_t^i, y_t)\]
+\begin{frame}{Виртуальные потери спящих экспертов}
+  \begin{block}{Определение 13. Виртуальные потери в sAdaHedge}
+    На шагах сна эксперту приписывается смешанная потеря агрегатора:
+    $\ell_t^i:=m_t$ при $i\notin E_t$.
   \end{block}
-
-  \begin{block}{Определение: регрет относительно лучшего фиксированного эксперта}
-    \[R_T = L_T - \min\limits_{1 \leqslant i \leqslant N} L_T^i\]
+  \begin{block}{Определение 14. Расширенные кумулятивные потери}
+    К фактическим потерям на активных шагах добавляются виртуальные потери:
+    \[
+      \mathcal L_T^i:=\sum_{\substack{1\le t\le T\\i\in E_t}}\ell_t^i,
+      \qquad
+      L_T^i:=\mathcal L_T^i+\sum_{\substack{1\le t\le T\\i\notin E_t}}m_t.
+    \]
   \end{block}
-
-  \begin{alertblock}{Замечание}
-    Лучший фиксированный эксперт выбирается по суммарной потере за все $T$ шагов;
-    его индекс не меняется во времени.
-  \end{alertblock}
+  Каждый эксперт получает последовательность потерь на всех шагах.
+  К ней можно применить оценки экспоненциальных весов.
+  \par\vfill{\scriptsize Виртуальная потеря равна $m_t$; скрытая фактическая потеря спящего эксперта в обновлении не используется.\par}
 \end{frame}
 
-\begin{frame}{Hedge}
-  Начальное распределение весов: $w_1^i = \frac{1}{N}$. Для моментов времени $t = 1, 2, \dots$:
+\begin{frame}{Как вычислить смешанную потерю}
+  Пусть $q_t=\sum_{i\in E_t}p_t^i>0$. Подставим виртуальные потери:
+  \[
+    e^{-\eta_t m_t}
+    =\sum_{i\in E_t}p_t^i e^{-\eta_t\ell_t^i}
+      +(1-q_t)e^{-\eta_t m_t}.
+  \]
+  Перенос последнего слагаемого даёт
+  \[
+    q_t e^{-\eta_t m_t}=\sum_{i\in E_t}p_t^i e^{-\eta_t\ell_t^i}.
+  \]
+  \begin{block}{Формула через доступные потери}
+    \[
+      m_t=-\frac1{\eta_t}\ln\!\left(\sum_{i\in E_t} p_t^{i,E_t} e^{-\eta_t\ell_t^i}\right).
+    \]
+  \end{block}
+  \par\vfill{\scriptsize Правая часть зависит только от доступных потерь и известных весов: цикличности нет.\par}
+\end{frame}
+
+\begin{frame}{Адаптивный параметр sAdaHedge}
+  Как и раньше, определим
+  \[
+    \delta_t=\ell_t-m_t\ge0,\qquad
+    \Delta_t=\Delta_{t-1}+\delta_t,\qquad\Delta_0=0.
+  \]
+  Параметр обучения выбирается до текущих потерь:
+  \[
+    \eta_t=\begin{cases}
+      \dfrac{\ln N}{\Delta_{t-1}},&\Delta_{t-1}>0,\\[2mm]
+      \infty,&\Delta_{t-1}=0.
+    \end{cases}
+  \]
   \begin{itemize}
-    \item Распределитель вычисляет $\bar{p_t} = \frac{\bar{w_t}}{\sum\limits_{i=1}^{N}w_t^i}$;
-    \item Эксперты объявляют свои потери $\ell_t^i$. Пусть $\bar{\ell_t} = (\ell_t^1, \dots, \ell_t^N)$;
-    \item Распределитель подсчитывает свои потери $\ell_t = (\bar{p_t} \cdot \bar{\ell_t}) := \sum\limits_{i=1}^{N}p_t^i \cdot \ell_t^i$;
-    \item Распределитель пересчитывает веса экспертов $$w_{t+1}^i = w_t^i e^{-\eta \ell_t^i},$$ где $\eta > 0$ — параметр обучения.
+    \item $\Delta_t$ не убывает, поэтому $\eta_t$ не возрастает.
+    \item Горизонт $T$ и будущий размах потерь заранее не нужны.
+    \item При большем накопленном разрыве веса менее сосредоточены.
   \end{itemize}
-  Кумулятивные потери:
-  \[H_t = \sum\limits_{s=1}^{t} \ell_s, \quad L_t^i = \sum\limits_{s=1}^{t} \ell_t^i.\]
+  %\par\vfill{\scriptsize sAdaHedge: Вьюгин--Шамсутдинов~\cite{VyuginSham}; адаптация через смешанную разность: \cite{AdaHedge}.\par}
 \end{frame}
 
+\begin{frame}{Начальный случай: смешанная разность равна нулю}
+  Инициализация: $L_0^i=0$, $w_1^i=1/N$, $\Delta_0=0$.
+  \medskip
+  Пока $\Delta_{t-1}=0$, расширенные потери всех экспертов совпадают.
+  Используем предельное соглашение:
+  \[
+    \eta_t=\infty,\qquad \frac1{\eta_t}=0,\qquad
+    p_t^i=\frac1N,\qquad p_t^{i,E_t}=\frac1{|E_t|}.
+  \]
+  \[
+    m_t=\min_{i\in E_t}\ell_t^i,\qquad
+    \delta_t=\frac1{|E_t|}\sum_{i\in E_t}\ell_t^i-\min_{i\in E_t}\ell_t^i.
+  \]
+  \par\medskip\textbf{При первом различии активных потерь получаем $\delta_t>0$.}
+  На следующем шаге $\eta_{t+1}$ уже конечен.
+  \par\vfill{\scriptsize Если все активные потери равны, виртуальные потери совпадают с ними; равенство расширенных потерь сохраняется.\par}
+\end{frame}
 
-\begin{frame}{Две колонки и таблица}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.47\textwidth}
-      \textbf{Порядок работы}
+\begin{frame}{Один шаг sAdaHedge}
+  \textbf{До раскрытия потерь}
+  \begin{enumerate}
+    \item Получить $E_t$. Вычислить $\eta_t$ по $\Delta_{t-1}$.
+    \item По $L_{t-1}^i$ пересчитать веса и нормировать их на $E_t$.
+    \item При прогнозировании выдать $\displaystyle\gamma_t=\sum_{i\in E_t} p_t^{i,E_t}\gamma_t^i$.
+  \end{enumerate}
+  \medskip
+  \textbf{После раскрытия потерь}
+  \begin{enumerate}
+    \setcounter{enumi}{3}
+    \item Вычислить $\ell_t$, $m_t$, $\delta_t=\ell_t-m_t$.
+    \item Спящим экспертам присвоить $\ell_t^i=m_t$.
+    \item Обновить $L_t^i=L_{t-1}^i+\ell_t^i$ и $\Delta_t=\Delta_{t-1}+\delta_t$.
+  \end{enumerate}
+  \par\vfill{\scriptsize На следующем шаге веса вычисляются заново с новым $\eta_{t+1}$. При переменном параметре простой множитель $e^{-\eta_t\ell_t^i}$ не заменяет этот пересчёт.\par}
+\end{frame}
+
+% Основные страницы 20--27. Время блока: 18 минут, отметка 55:00.
+\section{Гарантия качества}
+\begin{frame}{Регрет относительно специалиста}
+  \begin{block}{Определение 15. Регрет специалиста}
+    Разность потерь смеси и эксперта на шагах активности этого эксперта:
+    \[
+      \widetilde R_T^i:=
+         \sum_{\substack{1\le t\le T\\i\in E_t}}(\ell_t-\ell_t^i).
+    \]
+  \end{block}
+  \begin{block}{Определение 16. Расширенный регрет}
+    Регрет по расширенным потерям на всём горизонте:
+    $R_T^i:=L_T-L_T^i$.
+  \end{block}
+  Во время сна $\ell_t^i=m_t$, поэтому
+  \[
+    R_T^i=\widetilde R_T^i+
+       \sum_{\substack{1\le t\le T\\i\notin E_t}}\delta_t
+       \ge\widetilde R_T^i.
+  \]
+  \par\vfill{\scriptsize Для разных специалистов наборы активных дней различаются; $\delta_t\ge0$ даёт сравнение регретов.\par}
+\end{frame}
+
+\begin{frame}{Дисперсия и размах потерь}
+  \begin{block}{Определение 17. Размах потерь}
+    Разность максимальной и минимальной потерь активных экспертов:
+    \[
+      s_t:=\max_{i\in E_t}\ell_t^i-\min_{i\in E_t}\ell_t^i,
+      \qquad S_T:=\max_{1\le t\le T}s_t.
+    \]
+  \end{block}
+  \begin{block}{Определение 18. Взвешенная дисперсия потерь}
+    Дисперсия относительно распределения активных весов и её сумма:
+    \[
+      v_t:=\sum_{i\in E_t} p_t^{i,E_t}(\ell_t^i-\ell_t)^2,
+      \qquad V_T:=\sum_{t=1}^T v_t.
+    \]
+  \end{block}
+  \begin{itemize}
+    \item Из границ смешанной потери следует $0\le\delta_t\le s_t$.
+    \item При совпадении всех активных потерь $s_t=v_t=\delta_t=0$.
+  \end{itemize}
+  \par\vfill{\scriptsize Дисперсия определяется по весам экспертов; вероятностная модель ряда не требуется.\par}
+\end{frame}
+
+\begin{frame}{Оценка регрета sAdaHedge}
+  \begin{block}{Теорема Вьюгина--Шамсутдинова}
+    При $N\ge2$, непустых $E_t$ и описанном протоколе для любого
+    эксперта $i$ и любого $T\ge1$ выполнено
+    \[
+      \widetilde R_T^i\le
+      2\sqrt{V_T\ln N}+S_T\left(\frac43\ln N+2\right).
+    \]
+  \end{block}
+  \medskip
+  \begin{itemize}
+    \item Одна граница одновременно для всех специалистов.
+    \item Сложность последовательности входит через $V_T$ и $S_T$.
+    \item При $s_t\le1$ имеем $V_T\le T/4$ и порядок
+          $O(\sqrt{T\ln N}+\ln N)$.
+  \end{itemize}
+  %\par\vfill{\scriptsize Вьюгин--Шамсутдинов (2016)~\cite{VyuginSham}. Следующие слайды раскрывают ключевые переходы доказательства.\par}
+\end{frame}
+
+\begin{frame}{Шаг 1. Сведение регрета к смешанной разности}
+  Применим оценку с невозрастающим $\eta_t$ к расширенным потерям:
+  \[
+    M_T-L_T^i\le\frac{\ln N}{\eta_T}
+      =\Delta_{T-1}\le\Delta_T.
+  \]
+  Используя $L_T=M_T+\Delta_T$, получаем
+  \[
+    R_T^i=L_T-L_T^i=(M_T-L_T^i)+\Delta_T\le2\Delta_T.
+  \]
+  \begin{block}{Промежуточная гарантия}
+    \[\widetilde R_T^i\le R_T^i\le2\Delta_T.\]
+  \end{block}
+  Осталось оценить $\Delta_T$ через наблюдаемую дисперсию и размах.
+  \par\vfill{\scriptsize При $\Delta_{T-1}=0$ используется соглашение $1/\eta_T=0$ и тот же предельный смысл потенциала.\par}
+\end{frame}
+
+\begin{frame}{Шаг 2. Одношаговая оценка через дисперсию}
+  Для $s_t>0$ и конечного $\eta_t$ неравенство Бернштейна даёт
+  \[
+    \delta_t\le
+    \frac{e^{s_t\eta_t}-1-s_t\eta_t}{\eta_t s_t^2}\,v_t.
+  \]
+  Для суммирования удобнее следующее следствие:
+  \begin{block}{Вспомогательное неравенство}
+    \[\frac{\delta_t}{\eta_t}\le\frac12v_t+\frac13s_t\delta_t.\]
+  \end{block}
+  \begin{itemize}
+    \item Оно верно при любом конечном $\eta_t>0$.
+    \item При $s_t=0$ обе части равны нулю.
+    \item При $\eta_t=\infty$ левая часть равна нулю.
+  \end{itemize}
+  %\par\vfill{\scriptsize Полное применение Бернштейна и переход для малых и больших $s_t\eta_t$: резерв A4--A5.\par}
+\end{frame}
+
+\begin{frame}{Шаг 3. Накопление смешанных разностей}
+  Телескопируем квадраты и используем $\Delta_{t-1}=\ln N/\eta_t$:
+  \begin{align*}
+    \Delta_T^2
+      &=\sum_{t=1}^T\left(2\delta_t\Delta_{t-1}+\delta_t^2\right)\\
+      &\le2\ln N\sum_{t=1}^T\frac{\delta_t}{\eta_t}+S_T\Delta_T\\
+      &\le2\ln N\sum_{t=1}^T\left(\frac12v_t+\frac13s_t\delta_t\right)
+           +S_T\Delta_T.
+  \end{align*}
+  Здесь $\delta_t^2\le s_t\delta_t$ и $s_t\le S_T$.
+  \[\alert{\Delta_T^2\le V_T\ln N+\left(\frac23\ln N+1\right)S_T\Delta_T.}\]
+\end{frame}
+
+\begin{frame}{Шаг 4. Решение квадратного неравенства}
+  Обозначим
+  \[a=V_T\ln N,\qquad b=S_T\left(\frac23\ln N+1\right).\]
+  Из $\Delta_T^2\le a+b\Delta_T$ и $a,b\ge0$ следует
+  \[
+    \Delta_T\le\frac{b+\sqrt{b^2+4a}}2\le\sqrt a+b.
+  \]
+  Подставляя в промежуточную гарантию, получаем
+  \[
+    \widetilde R_T^i\le R_T^i\le2\Delta_T
+      \le2\sqrt{V_T\ln N}+S_T\left(\frac43\ln N+2\right).
+  \]
+  \par\medskip\textbf{Граница следует из контроля накопленного разрыва между $\ell_t$ и $m_t$.}
+\end{frame}
+
+\begin{frame}{Переход от смеси потерь к прогнозам}
+  Пусть $\mathcal D$ выпукло, а $\ell(\gamma,y)$ выпукла по $\gamma$.
+  Агрегатор выдаёт
+  \[\gamma_t=\sum_{i\in E_t} p_t^{i,E_t}\gamma_t^i.\]
+  По Йенсену фактическая потеря не больше смеси потерь:
+  \[
+    \ell(\gamma_t,y_t)\le\sum_{i\in E_t} p_t^{i,E_t}\ell(\gamma_t^i,y_t)=\ell_t.
+  \]
+  \begin{block}{Определение 19. Регрет прогноза на активных шагах}
+    \[
+      \widetilde R_{T,\mathrm{pred}}^i
+      :=\sum_{\substack{1\le t\le T\\i\in E_t}}
+          \bigl(\ell(\gamma_t,y_t)-\ell(\gamma_t^i,y_t)\bigr).
+    \]
+  \end{block}
+  \textbf{Следствие:} $\widetilde R_{T,\mathrm{pred}}^i\le\widetilde R_T^i$;
+  оценка теоремы сохраняется для прогнозов.
+  \par\vfill{\scriptsize Суммарные фактические потери прогноза: $A_T=\sum_t\ell(\gamma_t,y_t)$.\par}
+\end{frame}
+
+% Основные страницы 28--36. Время блока: 16 минут, отметка 71:00.
+\section{Численный эксперимент}
+\begin{frame}{Данные: суточное электропотребление}
+  Одно домохозяйство во Франции, декабрь 2006 -- ноябрь 2010.
+  \begin{center}
+    \includegraphics[width=\textwidth,height=4.0cm,keepaspectratio]{figures/daily_energy.pdf}
+  \end{center}
+  Суточная энергия: $Y_d=\frac1{60}\sum_{r=1}^{1440}P_{d,r}$, кВт$\cdot$ч.
+  Полные сутки: $1358$ из $1442$. Пропуски сохранены.
+  %\par\vfill{\scriptsize Данные UCI~\cite{UCIHousehold}. Эксперимент данного доклада; схема специализации основана на~\cite{VyuginSham}.\par}
+\end{frame}
+
+\begin{frame}{Хронологический протокол эксперимента}
+  После построения признаков доступны $989$ наблюдений.
+  \medskip
+  \begin{center}
+    \begin{tabular}{@{}lrrr@{}}
+      \toprule
+      Часть & Дней & Начало & Конец\\
+      \midrule
+      Обучение экспертов & 593 & 17.01.2007 & 17.04.2009\\
+      Выбор активности & 198 & 18.04.2009 & 29.01.2010\\
+      Тестирование & 198 & 31.01.2010 & 25.11.2010\\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \begin{itemize}
+    \item $20$ признаков: лаги, прошлые скользящие статистики, календарь.
+    \item Прогноз на один день вперёд; прошлые тестовые исходы доступны.
+    \item Эксперты после обучения фиксированы. На тесте меняются веса.
+  \end{itemize}
+  \par\vfill{\scriptsize Шаг $t$ означает доступный тестовый день. Подробные признаки: резерв A6.\par}
+\end{frame}
+
+\begin{frame}{Пять экспертов и специализация по дням недели}
+  Для каждого дня недели по калибровке выбраны три эксперта
+  с наименьшей средней несимметричной потерей.
+  \begin{center}
+    \begin{tabular}{@{}l*{7}{c}@{}}
+\toprule
+Эксперт & Пн & Вт & Ср & Чт & Пт & Сб & Вс \\
+\midrule
+Ridge &  & $\bullet$ & $\bullet$ &  & $\bullet$ & $\bullet$ & $\bullet$ \\
+Lasso & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ \\
+Bayesian Ridge &  & $\bullet$ &  &  &  & $\bullet$ & $\bullet$ \\
+Random Forest & $\bullet$ &  &  & $\bullet$ &  &  &  \\
+Gradient Boosting & $\bullet$ &  & $\bullet$ & $\bullet$ & $\bullet$ &  &  \\
+\bottomrule
+\end{tabular}
+  \end{center}
+  Во всех тестовых днях $|E_t|=3$.
+  Правило активности известно до наблюдения потребления.
+  %\par\vfill{\scriptsize Ridge, Lasso, Bayesian Ridge --- линейные модели; Random Forest и Gradient Boosting --- ансамбли деревьев. Настройки: резерв A7.\par}
+\end{frame}
+
+\begin{frame}{Критерий сравнения и запуск агрегатора}
+  %Нормировка по максимуму только обучающей части:
+  %\[C=67{,}16203\ \text{кВт}\cdot\text{ч},\qquad y_t=Y_t/C,\quad\gamma_t^i=\widehat Y_t^i/C.\]
+  Функция потерь:
+  \[\ell(\gamma,y)=(\gamma-y)_++2(y-\gamma)_+.\]
+  \begin{itemize}
+    \item Недооценка вдвое дороже равной по величине переоценки.
+    \item На старте теста $L_0^i=0$, $\Delta_0=0$: калибровка не входит в историю весов.
+    \item Сравнение на всех $198$ днях: пять экспертов, sAdaHedge,
+          среднее активных и среднее всех экспертов.
+  \end{itemize}
+  %\par\vfill{\scriptsize Значения выше $C$ не обрезаются: нормировка не гарантирует потерь в $[0,1]$. MAE и RMSE дополнительно считаются в кВт$\cdot$ч.\par}
+\end{frame}
+
+\begin{frame}{Прогнозы на последних 90 доступных днях}
+  \begin{center}
+    \includegraphics[width=\textwidth,height=5.0cm,keepaspectratio]{figures/forecasts.pdf}
+  \end{center}
+  Агрегатор воспроизводит общий уровень потребления,
+  но сглаживает часть резких суточных скачков.
+  \par\vfill{\scriptsize Разрывы линий соответствуют исключённым календарным дням. Наблюдения и прогнозы приведены в физических единицах.\par}
+\end{frame}
+
+\begin{frame}{Качество на всём тестовом горизонте}
+  \begin{center}
+    \begin{tabular}{@{}lrrr@{}}
+\toprule
+Метод & Суммарная потеря & MAE & RMSE \\
+\midrule
+Random Forest & $17{,}23283$ & $3{,}97616$ & $5{,}25696$ \\
+\textbf{sAdaHedge} & $17{,}46011$ & $4{,}08681$ & $5{,}42988$ \\
+Среднее активных & $17{,}53792$ & $4{,}05079$ & $5{,}41996$ \\
+Gradient Boosting & $17{,}57012$ & $3{,}85351$ & $5{,}33035$ \\
+Среднее всех & $17{,}88205$ & $4{,}01153$ & $5{,}44192$ \\
+Lasso & $18{,}37446$ & $4{,}18644$ & $5{,}60173$ \\
+Ridge & $18{,}83564$ & $4{,}19493$ & $5{,}74170$ \\
+Bayesian Ridge & $19{,}02995$ & $4{,}21581$ & $5{,}80568$ \\
+\bottomrule
+\end{tabular}
+  \end{center}
+  По несимметричной потере sAdaHedge:
+  на $1{,}32\%$ хуже Random Forest;
+  на $0{,}44\%$ лучше среднего активных.
+  %\par\vfill{\scriptsize MAE и RMSE --- в кВт$\cdot$ч. По ним sAdaHedge уступает среднему активных. Лучшая MAE у Gradient Boosting.\par}
+\end{frame}
+
+\begin{frame}{Кумулятивные потери прогнозов}
+  \begin{center}
+    \includegraphics[width=\textwidth,height=4.7cm,keepaspectratio]{figures/cumulative_losses.pdf}
+  \end{center}
+  \[A_T=\sum_{t=1}^{T}\ell(\gamma_t,y_t)=17{,}46011.\]
+  %\par\vfill{\scriptsize Все кривые показывают фактические потери соответствующих прогнозов на одних и тех же $198$ тестовых днях.\par}
+\end{frame}
+
+\begin{frame}{Регрет прогноза и теоретическая граница}
+  \begin{center}
+    \includegraphics[width=\textwidth,height=4.6cm,keepaspectratio]{figures/specialist_regret.pdf}
+  \end{center}
+  \[
+    \max_i\widetilde R_{T,\mathrm{pred}}^i=0{,}17868
+      \;<\;B_T=1{,}31346.
+  \]
+  \par\vfill{\scriptsize На каждом префиксе теста и для каждого эксперта проверено
+    $\widetilde R_{t,\mathrm{pred}}^i\le B_t$. Сравнение проводится на днях активности соответствующего эксперта.\par}
+\end{frame}
+
+\begin{frame}{Динамика весов и параметра обучения}
+  \begin{center}
+    \includegraphics[width=\textwidth,height=5.1cm,keepaspectratio]{figures/weights_eta.pdf}
+  \end{center}
+  %\par\vfill{\scriptsize Во время сна эксперт не участвует в прогнозе. При следующей активации его вес нормируется заново.
+  %  $\eta_1=\infty$, $\eta_2\approx161{,}60$, $\eta_T\approx7{,}44$; все конечные значения показаны в логарифмической шкале.\par}
+\end{frame}
+
+% Основные страницы 37--38. Время блока: 4 минуты, отметка 75:00.
+\section{Итоги}
+\begin{frame}{Результаты и ограничения}
+  \begin{itemize}
+    \item sAdaHedge адаптирует веса доступных экспертов и даёт
+          гарантию относительно каждого специалиста на его активных шагах.
+    \item При выпуклой потере гарантия переносится на усреднённый прогноз.
+    \item В эксперименте получено небольшое улучшение относительно
+          среднего активных; лучшим на всём горизонте оказался Random Forest.
+    \item Адаптация весов не выбирает правило специализации
+          и не забывает старые потери.
+  \end{itemize}
+  %\par\vfill{\scriptsize Один ряд, одно разбиение, один выбор коэффициентов потерь. Статистическая значимость различий не оценивалась.\par}
+\end{frame}
+
+\begin{frame}{Направления продолжения}
+  \begin{enumerate}
+    \item \textbf{Выбор активности.} Сравнить фиксированную специализацию,
+          всех активных экспертов и обновление специализации по прошлым ошибкам.
+    \item \textbf{Смена режима.} Исследовать окна, дисконтирование и перезапуски;
+          оценивать регрет на временных отрезках~\cite{Adaptive}.
+    \item \textbf{Устойчивость результатов.} Повторить сравнение на нескольких
+          хронологических разбиениях и при разных отношениях штрафов.
+  \end{enumerate}
+  \medskip
+  \par\medskip\textbf{Ближайший шаг: отделить вклад выбора экспертов от вклада адаптации весов.}
+  %\par\vfill{\scriptsize Модификации алгоритма требуют отдельного анализа гарантий. Дополнительные доказательства, настройки и литература --- в резервных слайдах.\par}
+\end{frame}
+
+% Резервные страницы 39--48, отдельные номера A1--A10.
+\section{Резерв}
+\begin{frame}[plain,noframenumbering]{Резерв A1. Монотонность потенциала по параметру}
+  Зафиксируем потери $L_T^i$ и начальные веса $w_1^i$, $\sum_iw_1^i=1$.
+  Пусть $0<\eta\le\mu$ и $r=\eta/\mu\in(0,1]$.
+  \[
+    Z_\eta:=\sum_i w_1^i e^{-\eta L_T^i}
+       =\sum_i w_1^i\left(e^{-\mu L_T^i}\right)^r.
+  \]
+  По вогнутости $x\mapsto x^r$:
+  \[Z_\eta\le\left(\sum_i w_1^i e^{-\mu L_T^i}\right)^r=Z_\mu^r.\]
+  Следовательно,
+  \[
+    M_T^\eta=-\frac1\eta\ln Z_\eta
+       \ge-\frac r\eta\ln Z_\mu=M_T^\mu.
+  \]
+  \par\medskip\textbf{Кумулятивная смешанная потеря невозрастает по $\eta$.}
+  \par\vfill{\scriptsize При сравнении параметров последовательность потерь фиксирована, включая уже полученные виртуальные потери.\par}
+\end{frame}
+
+\begin{frame}[plain,noframenumbering]{Резерв A2. Оценка при невозрастающем параметре}
+  Из определения весов при текущем $\eta_t$ имеем
+  \[m_t=M_t^{\eta_t}-M_{t-1}^{\eta_t},\qquad M_0^\eta=0.\]
+  Суммируем и группируем члены:
+  \begin{align*}
+    M_T
+      &=\sum_{t=1}^T\left(M_t^{\eta_t}-M_{t-1}^{\eta_t}\right)\\
+      &=M_T^{\eta_T}
+         +\sum_{t=1}^{T-1}\left(M_t^{\eta_t}-M_t^{\eta_{t+1}}\right).
+  \end{align*}
+  При $\eta_t\ge\eta_{t+1}$ монотонность даёт
+  $M_t^{\eta_t}\le M_t^{\eta_{t+1}}$.
+  \[\alert{M_T\le M_T^{\eta_T}\le L_T^i+\frac{\ln N}{\eta_T}.}\]
+\end{frame}
+
+\begin{frame}[plain,noframenumbering]{Резерв A3. Начальные и вырожденные случаи}
+  \textbf{Почему при $\Delta_{t-1}=0$ расширенные потери равны?}
+  \begin{itemize}
+    \item Изначально все $L_0^i=0$.
+    \item При равных $L_{t-1}^i$ активные веса равномерны.
+    \item Если $\delta_t=0$, среднее активных потерь равно их минимуму.
+          Значит, все эти потери равны $m_t$.
+    \item Спящим экспертам тоже присваивается $m_t$:
+          все $L_t^i$ остаются равными.
+  \end{itemize}
+  \medskip
+  \textbf{Совпадение активных потерь.}
+  При $s_t=0$, в том числе при $|E_t|=1$, получаем
+  $m_t=\ell_t$, $\delta_t=v_t=0$.
+  \medskip
+  \textbf{Пустое $E_t$.} Нормировка не определена.
+  Протокол требует хотя бы одного доступного эксперта на каждом шаге.
+\end{frame}
+
+\begin{frame}[plain,noframenumbering]{Резерв A4. Применение неравенства Бернштейна}
+  Для $X\in[0,1]$ и $a>0$ используем
+  \[\ln\mathbb{E} e^{-a(X-\mathbb{E} X)}\le\operatorname{Var}(X)(e^a-1-a).\]
+  При $s_t>0$ положим $\ell_t^-=\min_{i\in E_t}\ell_t^i$ и зададим
+  \[
+    X=\frac{\ell_t^i-\ell_t^-}{s_t}
+       \quad\text{с вероятностью } p_t^{i,E_t},\qquad a=s_t\eta_t.
+  \]
+  Тогда $\mathbb{E} X=(\ell_t-\ell_t^-)/s_t$, $\operatorname{Var}(X)=v_t/s_t^2$ и
+  \begin{align*}
+    \eta_t\delta_t
+       &=\ln\sum_{i\in E_t} p_t^{i,E_t} e^{-\eta_t(\ell_t^i-\ell_t)}\\
+       &=\ln\mathbb{E} e^{-s_t\eta_t(X-\mathbb{E} X)}
+         \le\frac{v_t}{s_t^2}\left(e^{s_t\eta_t}-1-s_t\eta_t\right).
+  \end{align*}
+  Делим на $\eta_t>0$ и получаем одношаговую оценку.
+  \par\vfill{\scriptsize Неравенство Бернштейна в этой форме: Cesa-Bianchi--Lugosi, леммы A.4--A.5~\cite{CBL}.\par}
+\end{frame}
+
+\begin{frame}[plain,noframenumbering]{Резерв A5. Переход к оценке отношения смешанной разности}
+  Обозначим $x=s_t\eta_t>0$. Если $0<x<3$, то
+  \[
+    e^x-1-x=\sum_{k=2}^{\infty}\frac{x^k}{k!}
+      \le\frac{x^2}{2}\sum_{j=0}^{\infty}(x/3)^j
+      =\frac{x^2}{2(1-x/3)}.
+  \]
+  Здесь $k!\ge2\cdot3^{k-2}$ при $k\ge2$. Поэтому
+  \[
+    \delta_t\le\frac{\eta_t v_t}{2(1-s_t\eta_t/3)}
+    \quad\Longrightarrow\quad
+    \frac{\delta_t}{\eta_t}\le\frac12v_t+\frac13s_t\delta_t.
+  \]
+  Если $x\ge3$, то непосредственно
+  \[
+    \frac{\delta_t}{\eta_t}=\frac{s_t\delta_t}{x}
+       \le\frac13s_t\delta_t
+       \le\frac12v_t+\frac13s_t\delta_t.
+  \]
+  \par\vfill{\scriptsize Таким образом, неравенство верно для всех конечных $\eta_t>0$, а не только при малом произведении $s_t\eta_t$.\par}
+\end{frame}
+
+\begin{frame}[plain,noframenumbering]{Резерв A6. Признаки и обработка пропусков}
+  \begin{center}
+    \begin{tabular}{@{}p{0.77\textwidth}r@{}}
+      \toprule
+      Группа признаков & Число\\
+      \midrule
+      Лаги $1$, $2$, $7$, $14$, $28$ календарных дней & 5\\
+      Среднее, стандартное отклонение и число известных значений
+        в окнах $7$ и $28$ дней & 6\\
+      Индикаторы дня недели & 7\\
+      Синус и косинус годового цикла & 2\\
+      \midrule
+      Всего & 20\\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \begin{itemize}
+    \item Скользящие окна используют только дни до прогнозируемого.
+    \item Требуется не менее $5$ значений в окне $7$ дней и $20$ в окне $28$ дней.
+    \item После построения признаков удаляются строки с неизвестной целью
+          или необходимыми признаками. Пропуски не заполняются.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[plain,noframenumbering]{Резерв A7. Настройки регрессионных экспертов}
+  \begin{center}
+    \begin{tabular}{@{}lp{0.64\textwidth}@{}}
+      \toprule
+      Эксперт & Выбранные параметры\\
+      \midrule
+      Ridge & Коэффициент регуляризации $100$\\
+      Lasso & Коэффициент регуляризации $0{,}5$\\
+      Bayesian Ridge & Одна конфигурация без перебора\\
+      Random Forest & $150$ деревьев, глубина не ограничена,
+        минимум $10$ наблюдений в листе\\
+      Gradient Boosting & $150$ деревьев глубины $2$,
+        скорость обучения $0{,}03$\\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \begin{itemize}
+    \item Подбор по несимметричной потере: три временных разбиения
+          внутри обучающей части, расширяющееся окно.
+    \item Стандартизация линейных моделей обучается внутри каждого разбиения.
+    \item Отрицательные прогнозы заменяются нулём. Начальное число генератора: $42$.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[plain,noframenumbering]{Резерв A8. Сравнения на активных днях}
+  Для каждого эксперта используются только дни его активности.
+  \begin{center}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Эксперт & Дней & $\mathcal L_T^i$ & $\widetilde R_{T,\mathrm{pred}}^i$ \\
+\midrule
+Ridge & 136 & $11{,}07508$ & $-0{,}01726$ \\
+Lasso & 198 & $18{,}37446$ & $-0{,}91434$ \\
+Bayesian Ridge & 69 & $6{,}37518$ & $0{,}07206$ \\
+Random Forest & 62 & $6{,}22361$ & $0{,}17868$ \\
+Gradient Boosting & 129 & $11{,}06780$ & $-0{,}05492$ \\
+\bottomrule
+\end{tabular}
+  \end{center}
+  \begin{itemize}
+    \item У трёх из пяти экспертов регрет прогноза отрицателен.
+    \item Максимальный итоговый регрет: $0{,}17868$ относительно Random Forest.
+    \item Теоретическая граница: $B_T\approx1{,}31346$.
+  \end{itemize}
+  \par\vfill{\scriptsize Проверки всех префиксов выполнены с допуском $10^{-9}$. Наборы активных дней у разных экспертов различаются.\par}
+\end{frame}
+
+\begin{frame}[plain,noframenumbering]{Резерв A9. Литература: основные теоретические источники}
+  \small
+  \begin{thebibliography}{9}
+    \bibitem[1]{CBL}
+      N.~Cesa-Bianchi, G.~Lugosi.
+      \emph{Prediction, Learning, and Games.}
+      Cambridge University Press, 2006.
+      \href{https://cesa-bianchi.di.unimi.it/predbook/}{Страница книги}.
+    \bibitem[2]{FreundSchapire}
+      Y.~Freund, R.~E.~Schapire.
+      A decision-theoretic generalization of on-line learning and an application to boosting.
+      \emph{J. Computer and System Sciences}, 55(1):119--139, 1997.
+      \href{https://www.schapire.net/papers/FreundSc95.pdf}{Авторская версия}.
+    \bibitem[3]{VyuginSham}
+      V.~V.~V'yugin, A.~I.~Shamsutdinov.
+      Trading-Network Order Formation with the Help of the Aggregation of Specialized Forecast Algorithms.
+      \emph{J. Communications Technology and Electronics}, 61:1400--1410, 2016.
+      \href{https://doi.org/10.1134/S1064226916120251}{DOI: 10.1134/S1064226916120251}.
+    \bibitem[4]{AdaHedge}
+      S.~De Rooij, T.~Van Erven, P.~D.~Gr\"unwald, W.~M.~Koolen.
+      Follow the Leader If You Can, Hedge If You Must.
+      \emph{JMLR}, 15(37):1281--1316, 2014.
+      \href{https://www.jmlr.org/papers/v15/rooij14a.html}{Текст статьи}.
+  \end{thebibliography}
+\end{frame}
+
+\begin{frame}[plain,noframenumbering]{Резерв A10. Литература: продолжение и данные}
+  \small
+  \begin{thebibliography}{9}
+    \bibitem[5]{Adaptive}
+      D.~Adamskiy, W.~M.~Koolen, A.~Chernov, V.~Vovk.
+      A Closer Look at Adaptive Regret.
+      \emph{Journal of Machine Learning Research}, 17(23):1--21, 2016.
+      \href{https://www.jmlr.org/papers/v17/13-533.html}{Текст статьи}.
       \medskip
-      \begin{enumerate}
-        \item Задать исходные данные.
-        \item Применить метод.
-        \item Оценить результат.
-      \end{enumerate}
-      % Для появления пунктов по очереди используйте
-      % \begin{enumerate}[<+->] вместо \begin{enumerate}.
-    \end{column}
-
-    \begin{column}{0.47\textwidth}
-      \textbf{Обозначения}
+    \bibitem[6]{Devaine}
+      M.~Devaine, P.~Gaillard, Y.~Goude, G.~Stoltz.
+      Forecasting electricity consumption by aggregating specialized experts.
+      \emph{Machine Learning}, 90(2):231--260, 2013.
+      \href{https://doi.org/10.1007/s10994-012-5314-7}{DOI: 10.1007/s10994-012-5314-7}.
       \medskip
-
-      \begin{tabular}{@{}ll@{}}
-        \toprule
-        Символ & Значение \\
-        \midrule
-        $n$       & Число наблюдений \\
-        $x_i$     & Наблюдение $i$ \\
-        $\bar{x}$ & Среднее значение \\
-        \bottomrule
-      \end{tabular}
-    \end{column}
-  \end{columns}
+    \bibitem[7]{UCIHousehold}
+      G.~Hebrail, A.~Berard.
+      \emph{Individual Household Electric Power Consumption.}
+      UCI Machine Learning Repository, 2006.
+      \href{https://doi.org/10.24432/C58K54}{DOI: 10.24432/C58K54}.
+      Лицензия CC BY 4.0.
+  \end{thebibliography}
 \end{frame}
-
-\begin{frame}{Иллюстрация}
-  \begin{figure}
-    \centering
-    % Положите рисунок my-figure.pdf рядом с main.tex.
-    % Можно заменить имя файла на своё (PDF, PNG или JPG).
-    \IfFileExists{my-figure.pdf}{%
-      \includegraphics[width=0.75\textwidth,height=0.52\textheight,
-                       keepaspectratio]{my-figure.pdf}%
-    }{%
-      \fbox{%
-        \parbox[c][0.44\textheight][c]{0.72\textwidth}{%
-          \centering Место для рисунка%
-        }%
-      }%
-    }
-    \caption{Краткая подпись к иллюстрации}
-  \end{figure}
-\end{frame}
-
-\section{Заключение}
-
-\begin{frame}{Заключение}
-  \begin{itemize}
-    \item Основной результат работы.
-    \item Область применения и ограничения.
-    \item Направление дальнейшего исследования.
-  \end{itemize}
-
-  \bigskip
-  \centering
-  Спасибо за внимание!
-\end{frame}
-
-% Заготовка нового слайда: скопируйте и раскомментируйте.
-% \begin{frame}{Заголовок слайда}
-%   Содержимое слайда.
-% \end{frame}
 
 \end{document}
